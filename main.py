@@ -2,7 +2,9 @@ import psycopg2
 from datetime import date, timedelta
 import asyncio
 import logging
-from aiogram import Bot, Dispatcher, types
+from aiogram import Bot, Dispatcher
+from env import *
+from connectors import Connectors
 
 
 class DrrCalculator:
@@ -11,37 +13,30 @@ class DrrCalculator:
         self.sales = []
         self.sales_total = {}
         self.high_drr = []
+        self.connectors = Connectors()
 
         self.select_data()
         self.prepare_data()
         self.drr_calc()
 
     def select_data(self):
-        conn = psycopg2.connect(
-            host="158.160.76.162",
-            database="wb_statistic",
-            user="postgres",
-            password="ZNN12031982",
-            port="2346"
-        )
-        cur = conn.cursor()
+
+        self.connectors.connect()
 
         today_date = date.today()
         yesterday_date = date.today() - timedelta(days=1)
 
-        query = f'''SELECT nmid, SUM(sum), company_id FROM wb.advert_fullstat 
+        query = f'''SELECT nmid, SUM(sum), company_id FROM {DB_SCHEMA}.advert_fullstat 
         WHERE date >= '{yesterday_date}'::date AND date < '{today_date}'::date AND apps <> 32 AND apps <> 64 
         GROUP BY nmid, company_id;'''
 
-        cur.execute(query)
-        self.targeting_cost = cur.fetchall()
+        self.targeting_cost = self.connectors.execute_sql(query)
 
-        query = f'''SELECT nmid, totalprice, discountpercent, company_id FROM wb.orders
+        query = f'''SELECT nmid, totalprice, discountpercent, company_id FROM {DB_SCHEMA}.orders
             WHERE date >= '{yesterday_date}'::date AND date < '{today_date}'::date AND ordertype = 'Клиентский';'''
-        cur.execute(query)
-        self.sales = cur.fetchall()
-        cur.close()
-        conn.close()
+
+        self.sales = self.connectors.execute_sql(query)
+        self.connectors.close()
 
     def prepare_data(self):
         for row in self.sales:
@@ -49,8 +44,6 @@ class DrrCalculator:
                 self.sales_total[row[0]] += (row[1] * ((100 - row[2]) / 100)) * (1 - 0.25)
             else:
                 self.sales_total[row[0]] = (row[1] * ((100 - row[2]) / 100)) * (1 - 0.25)
-
-        # print(sales_total)
 
     def drr_calc(self):
         self.high_drr = []
@@ -66,25 +59,24 @@ class DrrCalculator:
             self.high_drr = sorted(self.high_drr, reverse=False, key=lambda x: x[1])
 
     @staticmethod
-    def get_company_name_from_id(id):
-        conn = psycopg2.connect(
-            host="158.160.76.162",
-            database="wb_statistic",
-            user="postgres",
-            password="ZNN12031982",
-            port="2346"
-        )
-        cur = conn.cursor()
-        query = f'''SELECT name FROM wb.companies WHERE id = {id};'''
-        cur.execute(query)
-        result = cur.fetchone()
-        cur.close()
-        conn.close()
-        return result[0]
+    def parse_company_name(name):
+        name = str(name[0])
+        name = name.replace('ООО', '').replace('ИП', '').replace(' ', '')
+        name = name.replace('ПРАВОВОЙЦЕНТР', '')
+        if '.' in name:
+            name = name[0:len(name) - 4]
+        return name
+
+    def get_company_name_from_id(self, id_company):
+        self.connectors.connect()
+        query = f'''SELECT name FROM {DB_SCHEMA}.companies WHERE id = {id_company};'''
+        result = self.connectors.execute_sql(query)
+        self.connectors.close()
+        return DrrCalculator.parse_company_name(result[0])
 
 
 logging.basicConfig(level=logging.INFO)
-bot = Bot(token="6874025485:AAFaiNy3QMGHD2fSKTNPf7VtQBlsN0S0zCo")
+bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
 
@@ -97,18 +89,18 @@ async def cmd_start(bot: Bot):
             for item in drr.high_drr:
                 if item[1] != current_company and current_company != -1:
                     current_company = -1
-                    await bot.send_message(text=answer)
+                    await bot.send_message(TG_CHANNEL, answer)
                     answer = ""
                 if current_company == -1:
-                    answer += "#" + DrrCalculator.get_company_name_from_id(item[1]).replace(" ", "") + "\n"
+                    answer += "#" + drr.get_company_name_from_id(item[1]) + "\n"
                     current_company = item[1]
                 if current_company == item[1]:
                     answer += "Обрати внимание!!! на SKU " + str(item[0]) + " ДРР выше 5%\n"
-            await bot.send_message('@WbInvestDRR', answer)
+            await bot.send_message(TG_CHANNEL, answer)
     except(Exception, psycopg2.Error) as error:
         print(error)
         answer = "Что-то пошло не так! Сервер не отвечает!"
-        await bot.send_message('@WbInvestDRR', answer)
+        await bot.send_message(TG_CHANNEL, answer)
 
 
 async def main():
