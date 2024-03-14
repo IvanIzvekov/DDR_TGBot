@@ -9,6 +9,7 @@ from connectors import Connectors
 
 class DrrCalculator:
     def __init__(self):
+        self.companies = None
         self.targeting_cost = []
         self.sales = []
         self.sales_total = {}
@@ -18,6 +19,7 @@ class DrrCalculator:
         self.select_data()
         self.prepare_data()
         self.drr_calc()
+        self.select_company_name()
 
     def select_data(self):
 
@@ -49,7 +51,7 @@ class DrrCalculator:
         self.high_drr = []
         for row in self.targeting_cost:
             if str(row[0]) in self.sales_total:
-                if row[1] >= (self.sales_total[str(row[0])] / 100) * 5:
+                if row[1] >= (self.sales_total[str(row[0])] / 100) * DRR_VALUE:
                     self.high_drr.append([row[0], row[2]])
             # 100%
             else:
@@ -60,20 +62,23 @@ class DrrCalculator:
 
     @staticmethod
     def parse_company_name(name):
-        name = str(name[0])
+        name = str(name)
         name = name.replace('ООО', '').replace('ИП', '').replace(' ', '')
         name = name.replace('ПРАВОВОЙЦЕНТР', '')
         if '.' in name:
             name = name[0:len(name) - 4]
         return name
 
-    def get_company_name_from_id(self, id_company):
+    def select_company_name(self):
         self.connectors.connect()
-        query = f'''SELECT name FROM {DB_SCHEMA}.companies WHERE id = {id_company};'''
-        result = self.connectors.execute_sql(query)
+        query = f'''SELECT id, name FROM {DB_SCHEMA}.companies;'''
+        self.companies = self.connectors.execute_sql(query)
         self.connectors.close()
-        return DrrCalculator.parse_company_name(result[0])
 
+    def get_company_name_from_id(self, id_company):
+        for item in self.companies:
+            if item[0] == id_company:
+                return self.parse_company_name(item[1])
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN)
