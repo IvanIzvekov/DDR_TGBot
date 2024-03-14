@@ -3,6 +3,7 @@ from datetime import date, timedelta
 import asyncio
 import logging
 from aiogram import Bot, Dispatcher
+import aiohttp
 from env import *
 from connectors import Connectors
 
@@ -80,10 +81,6 @@ class DrrCalculator:
             if item[0] == id_company:
                 return self.parse_company_name(item[1])
 
-logging.basicConfig(level=logging.INFO)
-bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher()
-
 
 async def cmd_start(bot: Bot):
     answer = ""
@@ -109,6 +106,9 @@ async def cmd_start(bot: Bot):
 
 
 async def main():
+    logging.basicConfig(level=logging.INFO)
+    bot = Bot(token=BOT_TOKEN)
+    dp = Dispatcher()
     await cmd_start(bot)
 
 
